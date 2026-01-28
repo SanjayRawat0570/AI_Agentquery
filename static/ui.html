@@ -1,0 +1,143 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>TechSolutions Support Agent — Test UI</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+      body{font-family:Inter, Roboto, Arial, sans-serif; max-width:1100px;margin:24px auto;padding:0 16px}
+      h1{margin-bottom:6px}
+      .card{background:#fff;border:1px solid #e6e6e6;border-radius:8px;padding:12px;margin-bottom:12px}
+      label{display:block;margin-bottom:6px;font-weight:600}
+      textarea, input, select{width:100%;padding:8px;border-radius:6px;border:1px solid #ddd}
+      .row{display:flex;gap:8px}
+      button{padding:8px 12px;border-radius:6px;border:1px solid #1976d2;background:#1976d2;color:#fff;cursor:pointer}
+      pre.response{background:#f7f7f7;padding:10px;border-radius:6px;white-space:pre-wrap}
+      .inline{display:inline-block}
+      .small{width:180px}
+    </style>
+  </head>
+  <body>
+    <h1>TechSolutions Support Agent — Full test UI</h1>
+    <p>Use this page to exercise the orchestrator and each mock endpoint. Make sure the FastAPI server is running at <code>http://127.0.0.1:8000</code>.</p>
+
+    <div class="card">
+      <h2>Orchestrator — /api/query</h2>
+      <label for="query_text">Customer query</label>
+      <textarea id="query_text">Compare CM-Pro and CM-Enterprise pricing and list main differences.</textarea>
+      <label for="conv">Conversation ID (optional)</label>
+      <input id="conv" placeholder="conv-1234" />
+      <div style="margin-top:8px;display:flex;gap:8px">
+        <button id="send_query">Send to Orchestrator</button>
+        <button id="add_account_agent">Add Account Agent (admin)</button>
+      </div>
+      <h4>Response</h4>
+      <pre id="query_result" class="response">(waiting)</pre>
+    </div>
+
+    <div class="card">
+      <h2>Technical Diagnose — /api/diagnose</h2>
+      <label for="diag_desc">Issue description</label>
+      <textarea id="diag_desc">Seeing Error E1234 when calling the API — connection refused.</textarea>
+      <div style="margin-top:8px"><button id="send_diag">Run Diagnose</button></div>
+      <h4>Response</h4>
+      <pre id="diag_result" class="response">(waiting)</pre>
+    </div>
+
+    <div class="card">
+      <h2>Orders — /api/orders/{order_id}</h2>
+      <label for="order_id">Order ID</label>
+      <input id="order_id" value="ORD-12345" />
+      <div style="margin-top:8px"><button id="get_order">Get Order</button></div>
+      <h4>Response</h4>
+      <pre id="order_result" class="response">(waiting)</pre>
+    </div>
+
+    <div class="card">
+      <h2>Accounts — GET /api/accounts/{id} & POST change_subscription</h2>
+      <label for="acct_id">Account ID</label>
+      <input id="acct_id" value="ACC-1111" />
+      <div style="margin-top:8px;display:flex;gap:8px">
+        <button id="get_acct">Get Account</button>
+        <input id="new_plan" class="small" value="cm-enterprise" />
+        <button id="change_plan">Change Subscription</button>
+      </div>
+      <h4>Response</h4>
+      <pre id="acct_result" class="response">(waiting)</pre>
+    </div>
+
+    <div class="card">
+      <h2>Quick links</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button id="health">Health</button>
+        <button id="open_ui_endpoint">Open built-in UI endpoint (/ui)</button>
+        <a class="inline" href="/static/ui.html" target="_blank"><button>Open this static UI (new tab)</button></a>
+      </div>
+      <h4>Response</h4>
+      <pre id="quick_result" class="response">(waiting)</pre>
+    </div>
+
+    <script>
+      const base = '';
+      async function request(path, opts={}){
+        const res = await fetch(path, opts);
+        const txt = await res.text();
+        try{ return {status:res.status, json: JSON.parse(txt)} }catch(e){ return {status:res.status, text:txt} }
+      }
+
+      document.getElementById('send_query').onclick = async ()=>{
+        const q = document.getElementById('query_text').value;
+        const conv = document.getElementById('conv').value || undefined;
+        const body = conv ? { query: q, conversation_id: conv } : { query: q };
+        document.getElementById('query_result').textContent = 'Waiting...';
+        const r = await request('/api/query', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+        document.getElementById('query_result').textContent = JSON.stringify(r, null, 2);
+      }
+
+      document.getElementById('add_account_agent').onclick = async ()=>{
+        document.getElementById('query_result').textContent = 'Adding account agent...';
+        const r = await request('/api/admin/add_account_agent', { method: 'POST' });
+        document.getElementById('query_result').textContent = JSON.stringify(r, null, 2);
+      }
+
+      document.getElementById('send_diag').onclick = async ()=>{
+        const desc = document.getElementById('diag_desc').value;
+        document.getElementById('diag_result').textContent = 'Waiting...';
+        const r = await request('/api/diagnose', { method:'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ description: desc }) });
+        document.getElementById('diag_result').textContent = JSON.stringify(r, null, 2);
+      }
+
+      document.getElementById('get_order').onclick = async ()=>{
+        const id = document.getElementById('order_id').value;
+        document.getElementById('order_result').textContent = 'Waiting...';
+        const r = await request(`/api/orders/${encodeURIComponent(id)}`);
+        document.getElementById('order_result').textContent = JSON.stringify(r, null, 2);
+      }
+
+      document.getElementById('get_acct').onclick = async ()=>{
+        const id = document.getElementById('acct_id').value;
+        document.getElementById('acct_result').textContent = 'Waiting...';
+        const r = await request(`/api/accounts/${encodeURIComponent(id)}`);
+        document.getElementById('acct_result').textContent = JSON.stringify(r, null, 2);
+      }
+
+      document.getElementById('change_plan').onclick = async ()=>{
+        const id = document.getElementById('acct_id').value;
+        const plan = document.getElementById('new_plan').value;
+        document.getElementById('acct_result').textContent = 'Waiting...';
+        const r = await request(`/api/accounts/${encodeURIComponent(id)}/change_subscription`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ plan }) });
+        document.getElementById('acct_result').textContent = JSON.stringify(r, null, 2);
+      }
+
+      document.getElementById('health').onclick = async ()=>{
+        document.getElementById('quick_result').textContent = 'Waiting...';
+        const r = await request('/health');
+        document.getElementById('quick_result').textContent = JSON.stringify(r, null, 2);
+      }
+
+      document.getElementById('open_ui_endpoint').onclick = ()=>{
+        window.open('/ui','_blank');
+      }
+    </script>
+  </body>
+</html>
