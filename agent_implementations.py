@@ -19,6 +19,164 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+# ==================== PHASE 1.1: Tool/Function Calling Framework ====================
+class ToolRegistry:
+    """Registry for agent-callable tools with execution tracking"""
+    
+    def __init__(self):
+        self.tools: Dict[str, Dict[str, Any]] = {}
+        self.execution_history: List[Dict[str, Any]] = []
+        logger.info("ToolRegistry initialized")
+    
+    def register(self, name: str, func: callable, description: str, params: Optional[Dict] = None):
+        """Register a tool with its function, description, and parameters"""
+        self.tools[name] = {
+            "func": func,
+            "description": description,
+            "params": params or {}
+        }
+        logger.info(f"Registered tool: {name}")
+    
+    def execute(self, tool_name: str, **kwargs) -> Dict[str, Any]:
+        """Execute a tool and log the action"""
+        if tool_name not in self.tools:
+            error_msg = f"Tool {tool_name} not found in registry"
+            logger.error(error_msg)
+            return {"success": False, "error": error_msg}
+        
+        try:
+            result = self.tools[tool_name]["func"](**kwargs)
+            self.execution_history.append({
+                "tool": tool_name,
+                "params": kwargs,
+                "result": result,
+                "success": True,
+                "timestamp": self._get_timestamp()
+            })
+            logger.info(f"Tool executed successfully: {tool_name}")
+            return {"success": True, "result": result}
+        except Exception as e:
+            error_msg = str(e)
+            self.execution_history.append({
+                "tool": tool_name,
+                "params": kwargs,
+                "error": error_msg,
+                "success": False,
+                "timestamp": self._get_timestamp()
+            })
+            logger.error(f"Tool execution failed: {tool_name} - {error_msg}")
+            return {"success": False, "error": error_msg}
+    
+    def get_tool_description(self, tool_name: str) -> Optional[str]:
+        """Get description of a specific tool"""
+        if tool_name in self.tools:
+            return self.tools[tool_name]["description"]
+        return None
+    
+    def list_tools(self) -> List[Dict[str, str]]:
+        """List all available tools"""
+        return [
+            {"name": name, "description": tool["description"]}
+            for name, tool in self.tools.items()
+        ]
+    
+    def _get_timestamp(self) -> str:
+        """Get current timestamp in ISO format"""
+        from datetime import datetime
+        return datetime.utcnow().isoformat() + "Z"
+
+
+# Example tool implementations
+def get_customer_info(customer_id: str) -> Dict[str, Any]:
+    """Retrieve customer information from mock database"""
+    # Mock implementation - in production, this would query a real database
+    mock_customers = {
+        "CUST-001": {
+            "id": "CUST-001",
+            "name": "John Doe",
+            "email": "john@example.com",
+            "account_id": "ACC-1111",
+            "subscription": "cm-pro",
+            "status": "active"
+        },
+        "CUST-002": {
+            "id": "CUST-002",
+            "name": "Jane Smith",
+            "email": "jane@example.com",
+            "account_id": "ACC-2222",
+            "subscription": "cm-enterprise",
+            "status": "active"
+        }
+    }
+    return mock_customers.get(customer_id, {"error": "Customer not found"})
+
+
+def check_inventory(product_id: str) -> Dict[str, Any]:
+    """Check product inventory status"""
+    # Mock implementation
+    mock_inventory = {
+        "PROD-CM-PRO": {"in_stock": True, "quantity": 1000, "status": "Available"},
+        "PROD-CM-ENT": {"in_stock": True, "quantity": 500, "status": "Available"},
+        "PROD-CM-STR": {"in_stock": True, "quantity": 2000, "status": "Available"}
+    }
+    return mock_inventory.get(product_id, {"in_stock": False, "status": "Not found"})
+
+
+def create_support_ticket(issue: str, priority: str = "medium", customer_id: Optional[str] = None) -> Dict[str, Any]:
+    """Create a support ticket"""
+    from datetime import datetime
+    ticket_id = f"TICKET-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    return {
+        "ticket_id": ticket_id,
+        "issue": issue,
+        "priority": priority,
+        "customer_id": customer_id,
+        "status": "open",
+        "created_at": datetime.utcnow().isoformat() + "Z"
+    }
+
+
+def send_email(to: str, subject: str, body: str) -> Dict[str, Any]:
+    """Send email notification (mock implementation)"""
+    logger.info(f"[MOCK EMAIL] To: {to}, Subject: {subject}")
+    return {
+        "sent": True,
+        "to": to,
+        "subject": subject,
+        "message_id": f"MSG-{hash(to + subject) % 10000}"
+    }
+
+
+# Initialize global tool registry
+tool_registry = ToolRegistry()
+
+# Register default tools
+tool_registry.register(
+    "get_customer_info",
+    get_customer_info,
+    "Retrieve customer information including subscription and account details",
+    {"customer_id": "string"}
+)
+tool_registry.register(
+    "check_inventory",
+    check_inventory,
+    "Check product availability and inventory status",
+    {"product_id": "string"}
+)
+tool_registry.register(
+    "create_support_ticket",
+    create_support_ticket,
+    "Create a new support ticket for customer issues",
+    {"issue": "string", "priority": "string", "customer_id": "string"}
+)
+tool_registry.register(
+    "send_email",
+    send_email,
+    "Send email notifications to customers",
+    {"to": "string", "subject": "string", "body": "string"}
+)
+
+
 # LLM utilities
 class LLMUtils:
     def __init__(self, base_url: str, model_name: str):
@@ -97,16 +255,139 @@ class LLMUtils:
         return self.available
 
 
+# ==================== PHASE 1.4: Enhanced Error Handling & Self-Correction ====================
+class SelfCorrectingMixin:
+    """Mixin to add self-correction capabilities to agents"""
+    
+    def is_valid_response(self, response: str, query: str = None) -> Tuple[bool, Optional[str]]:
+        """
+        Check if response meets quality criteria
+        
+        Returns:
+            Tuple of (is_valid, reason_if_invalid)
+        """
+        # Length check
+        if len(response.strip()) < 10:
+            return False, "Response too short"
+        
+        # Check for error indicators
+        error_keywords = ["error:", "failed:", "exception:", "cannot process"]
+        if any(keyword in response.lower() for keyword in error_keywords):
+            return False, "Response contains error indicators"
+        
+        # Check for unhelpful responses
+        unhelpful_phrases = [
+            "i don't know",
+            "i cannot help",
+            "i'm not sure",
+            "no information available"
+        ]
+        response_lower = response.lower()
+        if any(phrase in response_lower for phrase in unhelpful_phrases):
+            # Only invalid if the entire response is unhelpful
+            if len(response.strip()) < 100:
+                return False, "Response appears unhelpful"
+        
+        return True, None
+    
+    async def self_correct(self, query: str, failed_response: str, reason: str) -> str:
+        """
+        Attempt to fix incorrect response
+        
+        Args:
+            query: Original user query
+            failed_response: The response that failed validation
+            reason: Why the response failed
+            
+        Returns:
+            Corrected response
+        """
+        correction_prompt = f"""
+The previous response to a customer query was inadequate.
+
+Customer Query: {query}
+
+Previous Response: {failed_response}
+
+Issue with Response: {reason}
+
+Please provide a better, more helpful response to the customer's query.
+Make sure the response is:
+1. Relevant to the query
+2. Detailed and informative (at least a few sentences)
+3. Professional and helpful in tone
+4. Actionable if appropriate
+"""
+        
+        correction_system_prompt = """
+You are a senior customer support specialist reviewing and improving responses.
+Provide clear, helpful, and professional responses to customer queries.
+If you don't have specific information, acknowledge this but provide related helpful information.
+"""
+        
+        try:
+            corrected_response = self.llm_utils.generate_response(
+                correction_prompt,
+                correction_system_prompt
+            )
+            logger.info("Response self-corrected successfully")
+            return corrected_response
+        except Exception as e:
+            logger.error(f"Self-correction failed: {e}")
+            # Return a generic helpful message
+            return f"Thank you for your question about: {query}. I apologize, but I'm having difficulty providing a detailed response at the moment. Please let me know if you'd like to rephrase your question or if there's a specific aspect I can help you with."
+
+
 # Base Agent class
-class BaseAgent:
+class BaseAgent(SelfCorrectingMixin):
     def __init__(self, llm_utils: LLMUtils):
         self.llm_utils = llm_utils
+        self.correction_attempts = 0
+        self.max_correction_attempts = 2
 
     async def process(
         self, query: str, conversation_history: List[Dict[str, Any]] = None
     ) -> str:
         """Process a query and return a response"""
         raise NotImplementedError("Subclasses must implement this method")
+    
+    async def process_with_validation(self, query: str, conversation_history: List[Dict[str, Any]] = None) -> str:
+        """
+        Process query with built-in validation and self-correction
+        
+        This method wraps the standard process() method with validation and correction logic.
+        """
+        self.correction_attempts = 0
+        
+        # First attempt
+        response = await self.process(query, conversation_history)
+        is_valid, reason = self.is_valid_response(response, query)
+        
+        # If valid, return immediately
+        if is_valid:
+            return response
+        
+        # Attempt self-correction
+        logger.warning(f"Invalid response detected: {reason}. Attempting self-correction.")
+        
+        while self.correction_attempts < self.max_correction_attempts:
+            self.correction_attempts += 1
+            try:
+                corrected_response = await self.self_correct(query, response, reason)
+                is_valid, reason = self.is_valid_response(corrected_response, query)
+                
+                if is_valid:
+                    logger.info(f"Response corrected successfully after {self.correction_attempts} attempt(s)")
+                    return corrected_response
+                
+                response = corrected_response
+            except Exception as e:
+                logger.error(f"Self-correction attempt {self.correction_attempts} failed: {e}")
+                break
+        
+        # If all corrections fail, return the best attempt we have
+        logger.warning(f"Could not produce valid response after {self.correction_attempts} corrections")
+        return response
 
 
 # Router Agent

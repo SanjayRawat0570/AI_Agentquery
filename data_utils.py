@@ -33,23 +33,35 @@ class DataManager:
     def load_knowledge_base(self) -> Dict[str, Any]:
         """Load and prepare knowledge base for agents"""
         try:
+            product_catalog_path = os.getenv(
+                "PRODUCT_CATALOG_PATH",
+                os.path.join(self.data_dir, "product_catalog.json"),
+            )
+            faq_path = os.getenv("FAQ_PATH", os.path.join(self.data_dir, "faq.json"))
+            tech_docs_path = os.getenv(
+                "TECH_DOCS_PATH",
+                os.path.join(self.data_dir, "tech_documentation.md"),
+            )
+            conversations_path = os.getenv(
+                "CONVERSATIONS_PATH",
+                os.path.join(self.data_dir, "customer_conversations.jsonl"),
+            )
+
             # Load product catalog
-            with open(os.path.join(self.data_dir, "product_catalog.json"), "r") as f:
+            with open(product_catalog_path, "r", encoding="utf-8") as f:
                 product_catalog = json.load(f)
 
             # Load FAQs
-            with open(os.path.join(self.data_dir, "faq.json"), "r") as f:
+            with open(faq_path, "r", encoding="utf-8") as f:
                 faqs = json.load(f)
 
             # Load tech documentation
-            with open(os.path.join(self.data_dir, "tech_documentation.md"), "r") as f:
+            with open(tech_docs_path, "r", encoding="utf-8") as f:
                 tech_docs = f.read()
 
             # Load customer conversations
             customer_conversations = []
-            with open(
-                os.path.join(self.data_dir, "customer_conversations.jsonl"), "r"
-            ) as f:
+            with open(conversations_path, "r", encoding="utf-8") as f:
                 for line in f:
                     if line.strip():  # Skip empty lines
                         customer_conversations.append(json.loads(line))

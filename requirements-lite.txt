@@ -5,3 +5,11 @@ requests==2.31.0
 markdown==3.5.1
 pydantic==1.10.24
 pytest==7.4.0
+
+# Phase 1 Dependencies (compatible versions)
+sqlalchemy>=2.0.29
+alembic>=1.13.1
+
+# Optional: PostgreSQL support (requires Visual C++ build tools on Windows)
+# psycopg2-binary==2.9.9
+# Note: SQLite works out of the box without additional dependencies
